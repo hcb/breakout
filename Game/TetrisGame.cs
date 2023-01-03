@@ -1,130 +1,80 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 class TetrisGame : IGame
 {
+    private static readonly Index2 GridSize = new Index2(9, 20);
+    private static readonly float BlockSize = 24;
+    private static readonly float FastDropDelay = 0.1f;
+    private static readonly float SlowDropDelay = 1.0f;
+    private static readonly Random Random = new Random();
+    private static readonly Color[] Colors = new Color[] { Color.Red, Color.Cyan, Color.Yellow, Color.Green };
 
-    public static readonly float blockSize = 16;
-    public static readonly Vector2 Resolution = new Vector2(512, 512);
+    public static readonly string Title = "Simple Tetris";
+    public static readonly Vector2 Resolution = GridSize.ToVector2() * BlockSize;
 
-    Vector2 bottomStart = new Vector2(0, 512 - 32);
-    Vector2 bottomEnd = new Vector2(512, 512 - 32);
-    Bounds2 bottomBounds;
+    private Block FallingBlock;
+    private List<Block> FallenBlocks = new List<Block>();
+    private float DropTimer = 0;
+    private float MoveTimer = 0;
 
-    Vector2 leftStart = new Vector2(32, 0);
-    Vector2 leftEnd = new Vector2(32, 512 - 32);
-
-    Vector2 rightStart = new Vector2(512 - 32, 0);
-    Vector2 rightEnd = new Vector2(512 - 32, 512 - 32);
-
-    // Tetronimo
-    Vector2 initialPosition = new Vector2((512) / 2, 16);
-    Tetronimo t;
-    List<Tetronimo> tetronimos;
-
-    float velocity = 1;
-
-    // Playfield size is 10 x 40, with 20 rows hidden from the player
-    // https://tetris.fandom.com/wiki/Playfield
-    // https://hackaday.com/2014/01/28/a-deep-dive-into-nes-tetris/
-    // need to create a grid
-
-    int[,] grid = new int[16, 10];
-
-    float count = 0;
-
-    // Load the font
-    Font font = Engine.LoadFont("arcade.ttf", 24);
     public TetrisGame()
     {
-        bottomBounds = new Bounds2(bottomStart, bottomEnd);
-        t = new Tetronimo(initialPosition);
-        tetronimos = new List<Tetronimo>();
-
+        CreateNewBlock();
     }
 
+    private void CreateNewBlock()
+    {
+        FallingBlock = new Block();
+        FallingBlock.Position = new Index2(GridSize.X / 2, 0);
+        FallingBlock.Color = Colors[Random.Next(Colors.Length)];
+    }
 
     public void Update()
     {
-        count += 1;
-
-        if (count % 100 != 0)
+        if (FallingBlock.Position.Y == GridSize.Y - 1 || FallenBlocks.Any(block => block.Position == FallingBlock.Position + new Index2(0, 1)))
         {
-            return;
-        }
-        Engine.DrawString(count.ToString(), new Vector2(20, 20), Color.White, font);
-        Engine.DrawLine(bottomStart, bottomEnd, Color.BlueViolet);
-        Engine.DrawLine(leftStart, leftEnd, Color.BlueViolet);
-        Engine.DrawLine(rightStart, rightEnd, Color.BlueViolet);
-
-        foreach (var b in tetronimos)
-        {
-            Bounds2 bounds = new Bounds2(b.position * 16, b.size);
-            Engine.DrawRectSolid(bounds, Color.OldLace);
+            FallenBlocks.Add(FallingBlock);
+            CreateNewBlock();
         }
 
-        if (!t.stopped)
+        DropTimer += Engine.TimeDelta;
+        if (DropTimer >= (Engine.GetKeyHeld(Key.Down) ? FastDropDelay : SlowDropDelay))
         {
-            // Draw the Tetronimo
-            Engine.DrawRectSolid(t.bounds, t.color);
-            Console.WriteLine(t.bounds.ToString());
-
-            // Use the keyboard to control the block:
-            Vector2 moveOffset = Vector2.Zero;
-            if (Engine.GetKeyHeld(Key.Left))
-            {
-                moveOffset.X -= 1;
-            }
-            if (Engine.GetKeyHeld(Key.Right))
-            {
-                moveOffset.X += 1;
-            }
-            if (Engine.GetKeyHeld(Key.Down))
-            {
-                moveOffset.Y += 1;
-            }
-            if (Engine.GetKeyHeld(Key.Up))
-            {
-                moveOffset.Y -= 1;
-            }
-            //moveOffset.Y += 16 * velocity;
-
-            //if (Engine.GetKeyHeld(Key.Down))
-            //{
-            //    velocity = 5;
-            //}
-            //else
-            //{
-            //    velocity = 1;
-            //}
-
-
-            t.position += moveOffset;
-            t.bounds = new Bounds2(t.position, t.size);
-
-            bool colliding = false;
-            foreach (var b in tetronimos)
-            {
-                if (t.isColliding(b.bounds))
-                {
-                    colliding = true;
-                    break;
-                }
-            }
-
-            //if (t.position.Y >= bottomBounds.Position.Y - t.size.Y || colliding)
-            //{
-            //    // stop the current tetronimo
-            //    t.stopped = true;
-            //    tetronimos.Add(t);
-
-            //    // start again with a new block
-            //    t = new Tetronimo(initialPosition);
-            //    // reset velocity
-            //    velocity = 1;
-            //}
+            DropTimer = 0;
+            FallingBlock.Position.Y += 1;
         }
 
+        MoveTimer -= Engine.TimeDelta;
+        if (MoveTimer <= 0)
+        {
+            if (Engine.GetKeyHeld(Key.Left) && FallingBlock.Position.X > 0 && !FallenBlocks.Any(block => block.Position == FallingBlock.Position + new Index2(-1, 0)))
+            {
+                MoveTimer = FastDropDelay;
+                FallingBlock.Position.X -= 1;
+            }
+            else if (Engine.GetKeyHeld(Key.Right) && FallingBlock.Position.X < GridSize.X - 1 && !FallenBlocks.Any(block => block.Position == FallingBlock.Position + new Index2(1, 0)))
+            {
+                MoveTimer = FastDropDelay;
+                FallingBlock.Position.X += 1;
+            }
+        }
+
+        DrawBlock(FallingBlock);
+        FallenBlocks.ForEach(block => DrawBlock(block));
+    }
+
+    private void DrawBlock(Block block)
+    {
+        Bounds2 bounds = new Bounds2(block.Position.ToVector2() * BlockSize, new Vector2(BlockSize, BlockSize));
+        Engine.DrawRectSolid(bounds, block.Color);
+    }
+
+    private class Block
+    {
+        public Index2 Position;
+        public Color Color;
     }
 }
 
